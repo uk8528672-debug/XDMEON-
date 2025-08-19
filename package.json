@@ -1,0 +1,18 @@
+{
+  "name": "xdemon-bug-bot",
+  "version": "1.1.0",
+  "description": "Xdemon Bug Bot \u2013 WhatsApp bot with multi-session dashboard, pairing by number, auto-react, auto-status, .menu image, and DP saver (Baileys + Express).",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "NODE_ENV=development node server.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.8",
+    "express": "^4.19.2",
+    "pino": "^9.5.0",
+    "dotenv": "^16.4.5",
+    "qrcode": "^1.5.4"
+  }
+}

@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Xdemon Bug Bot – Dashboard</title>
+  <style>
+    :root { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+    body { margin: 0; background: #070a1a; color: #e8ecff; min-height: 100dvh; }
+    header { padding: 20px; border-bottom: 1px solid #273167; background: #0b1130; }
+    header h1 { margin: 0; font-size: 22px; }
+    main { max-width: 960px; padding: 24px; margin: 0 auto; }
+    .card { background: #10163a; border: 1px solid #273167; border-radius: 16px; padding: 18px; margin-bottom: 18px; }
+    label { display: block; font-size: 13px; margin-bottom: 6px; opacity: .9 }
+    input { width: 100%; padding: 12px; background: #0b1130; color: #e8ecff; border: 1px solid #273167; border-radius: 10px; }
+    button { padding: 10px 14px; border: none; border-radius: 10px; background: #3d58ff; color: white; cursor: pointer; }
+    button.secondary { background: #32407a; }
+    button.danger { background: #db3956; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { padding: 10px; border-bottom: 1px solid #273167; font-size: 14px; }
+    .state { padding: 4px 8px; border-radius: 999px; font-size: 12px; }
+    .connected { background: #173c1d; color: #8bf798; }
+    .connecting { background: #323a13; color: #d5ff7c; }
+    .closed, .stopped { background: #3a111a; color: #ff9aa8; }
+    .muted { opacity: .8; font-size: 12px; }
+    .code { font-family: ui-monospace, Menlo, Consolas, monospace; background:#0b1130; border:1px solid #273167; padding:8px 10px; border-radius:8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Xdemon Bug Bot – Dashboard</h1>
+  </header>
+  <main>
+    <div class="card">
+      <h3>Pair a New Number</h3>
+      <div class="grid">
+        <div>
+          <label>Phone (international, digits only)</label>
+          <input id="phone" placeholder="923001234567" />
+        </div>
+        <div>
+          <label>Session ID (optional, default = phone)</label>
+          <input id="sessionId" placeholder="e.g. xdemo-1" />
+        </div>
+      </div>
+      <div style="margin-top:10px; display:flex; gap:10px;">
+        <button id="pairBtn">Get Pairing Code</button>
+        <button class="secondary" id="startBtn">Start/Attach</button>
+      </div>
+      <div id="pairStatus" class="muted" style="margin-top:10px;"></div>
+      <div id="pairCode" class="code" style="margin-top:10px; display:none;"></div>
+      <p class="muted">On your phone: WhatsApp → <b>Linked devices</b> → <b>Link a device</b> → <b>Enter code</b>, then type the code shown here.</p>
+    </div>
+
+    <div class="card">
+      <h3>Sessions</h3>
+      <table id="sessionsTable">
+        <thead>
+          <tr><th>Session ID</th><th>State</th><th>Actions</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </main>
+
+  <script>
+    const $ = s => document.querySelector(s);
+    const pairBtn = $("#pairBtn");
+    const startBtn = $("#startBtn");
+    const statusEl = $("#pairStatus");
+    const codeEl = $("#pairCode");
+    const phoneEl = $("#phone");
+    const sidEl = $("#sessionId");
+    const tbody = $("#sessionsTable tbody");
+
+    async function refreshSessions() {
+      const r = await fetch("/api/sessions");
+      const j = await r.json();
+      if (!j.ok) return;
+      tbody.innerHTML = "";
+      j.sessions.forEach(s => {
+        const tr = document.createElement("tr");
+        const stateClass = s.state === "connected" ? "connected" : (s.state === "connecting" ? "connecting" : "stopped");
+        tr.innerHTML = `
+          <td><code>${s.id}</code></td>
+          <td><span class="state ${stateClass}">${s.state}</span></td>
+          <td style="display:flex; gap:8px;">
+            <button data-action="start" data-id="${s.id}">Connect</button>
+            <button class="danger" data-action="logout" data-id="${s.id}">Logout/Delete</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    document.addEventListener("click", async (e) => {
+      const btn = e.target.closest("button[data-action]");
+      if (!btn) return;
+      const action = btn.dataset.action;
+      const id = btn.dataset.id;
+      btn.disabled = true;
+      try {
+        if (action === "start") {
+          await fetch("/api/start", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ sessionId: id }) });
+        } else if (action === "logout") {
+          await fetch("/api/logout", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ sessionId: id }) });
+        }
+        await refreshSessions();
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    pairBtn.onclick = async () => {
+      const phone = phoneEl.value.trim().replace(/\D/g, "");
+      const sessionId = sidEl.value.trim() || phone;
+      if (!phone) { statusEl.textContent = "Enter phone."; return; }
+      pairBtn.disabled = true;
+      statusEl.textContent = "Requesting pairing code...";
+      codeEl.style.display = "none";
+      try {
+        const r = await fetch("/api/pair", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone, sessionId })
+        });
+        const j = await r.json();
+        if (!j.ok) throw new Error(j.error || "Error");
+        statusEl.textContent = "Enter this code in WhatsApp → Linked devices:";
+        codeEl.textContent = j.code;
+        codeEl.style.display = "block";
+        await refreshSessions();
+      } catch (e) {
+        statusEl.textContent = "Error: " + e.message;
+      } finally {
+        pairBtn.disabled = false;
+      }
+    };
+
+    startBtn.onclick = async () => {
+      const sessionId = sidEl.value.trim() || phoneEl.value.trim().replace(/\D/g, "");
+      if (!sessionId) { statusEl.textContent = "Enter session ID or phone."; return; }
+      startBtn.disabled = true;
+      statusEl.textContent = "Connecting...";
+      codeEl.style.display = "none";
+      try {
+        await fetch("/api/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId })
+        });
+        statusEl.textContent = "Requested connection.";
+        await refreshSessions();
+      } catch (e) {
+        statusEl.textContent = "Error: " + e.message;
+      } finally {
+        startBtn.disabled = false;
+      }
+    };
+
+    refreshSessions();
+    setInterval(refreshSessions, 5000);
+  </script>
+</body>
+</html>
